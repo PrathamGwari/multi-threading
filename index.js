@@ -1,13 +1,13 @@
 const express = require("express");
 const mongoose = require("mongoose");
-const Chance = require("chance"); // Use the Chance library for generating random data
+const Chance = require("chance");
 const fs = require("fs");
 const path = require("path");
 const cluster = require("cluster");
-const ncpu = require("os").cpus().length;
+const os = require("os");
 const JSONStream = require("JSONStream");
 
-require("dotenv").config(); // Load environment variables from .env
+require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,12 +15,12 @@ const recordCount = 1000000;
 const recordLimit = 10;
 const dataDirectory = path.join(__dirname, "data");
 
+// Define your Mongoose model outside of the route handlers
 const schemaObject = {};
 for (let i = 1; i <= 100; i++) {
-  schemaObject[`field${i}`] = String; // All fields are defined as String
+  schemaObject[`field${i}`] = String;
 }
 const userSchema = new mongoose.Schema(schemaObject);
-
 const User = mongoose.model("new-users", userSchema);
 
 // MongoDB Connection
@@ -39,15 +39,8 @@ mongoose
 // Define your routes and middleware here
 app.get("/populate", async (req, res) => {
   const chance = new Chance();
-  const schemaObject = {};
-  for (let i = 1; i <= 100; i++) {
-    schemaObject[`field${i}`] = String; // All fields are defined as String
-  }
-  const userSchema = new mongoose.Schema(schemaObject);
 
-  const User = mongoose.model("new-users", userSchema);
-
-  const numberOfDocuments = 1000000; // Change this to the desired number of documents
+  const numberOfDocuments = 1000000;
 
   try {
     for (let i = 0; i < numberOfDocuments; i++) {
@@ -64,18 +57,21 @@ app.get("/populate", async (req, res) => {
   } catch (error) {
     console.error("Error inserting users:", error);
   }
+
+  return res.status(200).json({
+    success: true,
+    message: "Data population complete",
+  });
 });
 
 app.get("/data", async (req, res) => {
   try {
-    const dataDirectory = path.join(__dirname, "data"); // Define your data directory path
-
     if (!fs.existsSync(dataDirectory)) {
       fs.mkdirSync(dataDirectory);
     }
 
     const totalBatches = Math.ceil(recordCount / recordLimit);
-    let completedBatches = 0; // Counter for completed batches
+    let completedBatches = 0;
 
     let i = 0;
     while (i < recordCount) {
@@ -88,13 +84,10 @@ app.get("/data", async (req, res) => {
         .sort({ _id: -1 })
         .cursor();
 
-      // Create a JSONStream serializer to convert documents to JSON strings
       const jsonStream = JSONStream.stringify();
 
-      // Pipe the cursor to the JSONStream and then pipe the JSONStream to the write stream
       cursor.pipe(jsonStream).pipe(outputStream);
 
-      // Handle errors for the cursor and stream
       cursor.on("error", (err) => {
         console.error("Cursor error:", err);
       });
@@ -103,14 +96,12 @@ app.get("/data", async (req, res) => {
         console.error("JSONStream error:", err);
       });
 
-      // Use an async function to await the 'finish' event of the JSONStream
       await new Promise((resolve) => {
         jsonStream.on("finish", () => {
           completedBatches++;
-          i += recordLimit; // Increment i to fetch the next batch
+          i += recordLimit;
 
           if (completedBatches === totalBatches) {
-            // All batches are completed, resolve the promise
             console.log("Data extraction complete.");
             resolve();
           }
@@ -123,7 +114,7 @@ app.get("/data", async (req, res) => {
       message: "Data extraction complete",
     });
   } catch (err) {
-    console.log(err);
+    console.error(err);
     return res.status(500).json({
       err: err.message,
     });
@@ -133,10 +124,8 @@ app.get("/data", async (req, res) => {
 app.get("/multithread/data", async (req, res) => {
   try {
     if (cluster.isPrimary) {
-      console.log("-_-");
-      // this is master thread
-      console.log("number of cpus:", ncpu);
-      for (let i = 0; i < ncpu; i++) {
+      console.log("Number of CPUs:", os.cpus().length);
+      for (let i = 0; i < os.cpus().length; i++) {
         const worker = cluster.fork();
 
         worker.on("message", (data) => {
@@ -146,15 +135,15 @@ app.get("/multithread/data", async (req, res) => {
         worker.send({ message: "HI FROM MASTER NODE" });
       }
     } else {
-      console.log("************************");
-      // this is worker thread
+      console.log("Worker thread");
       process.on("message", (data) => {
         process.send({ message: "HI FROM WORKER", data });
       });
     }
+
     return res.status(200).json({
       success: true,
-      message: "data added successfully",
+      message: "Data processing started",
     });
   } catch (err) {
     return res.status(500).json({
@@ -163,7 +152,7 @@ app.get("/multithread/data", async (req, res) => {
     });
   }
 });
-// define a route that reads all documents
+
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
